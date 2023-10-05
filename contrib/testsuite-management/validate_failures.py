@@ -54,6 +54,7 @@ They may also contain additional text:
 @remove result text   - result text is removed from the expected set
 """
 
+
 import datetime
 import optparse
 import os
@@ -62,7 +63,7 @@ import sys
 
 # Handled test results.
 _VALID_TEST_RESULTS = [ 'FAIL', 'UNRESOLVED', 'XPASS', 'ERROR' ]
-_VALID_TEST_RESULTS_REX = re.compile("%s" % "|".join(_VALID_TEST_RESULTS))
+_VALID_TEST_RESULTS_REX = re.compile(f'{"|".join(_VALID_TEST_RESULTS)}')
 
 # Subdirectory of srcdir in which to find the manifest file.
 _MANIFEST_SUBDIR = 'contrib/testsuite-management'
@@ -78,7 +79,7 @@ _MANIFEST_PATH_PATTERN = '%s/%s/%s.xfail'
 _OPTIONS = None
 
 def Error(msg):
-  print('error: %s' % msg, file=sys.stderr)
+  print(f'error: {msg}', file=sys.stderr)
   sys.exit(1)
 
 
@@ -122,15 +123,16 @@ class TestResult(object):
          self.description) = re.match(r'([A-Z]+):\s*(\S+)\s*(.*)',
                                       summary_line).groups()
       except:
-        print('Failed to parse summary line: "%s"' % summary_line)
+        print(f'Failed to parse summary line: "{summary_line}"')
         raise
       self.ordinal = ordinal
     except ValueError:
-      Error('Cannot parse summary line "%s"' % summary_line)
+      Error(f'Cannot parse summary line "{summary_line}"')
 
     if self.state not in _VALID_TEST_RESULTS:
-      Error('Invalid test result %s in "%s" (parsed as "%s")' % (
-            self.state, summary_line, self))
+      Error(
+          f'Invalid test result {self.state} in "{summary_line}" (parsed as "{self}")'
+      )
 
   def __lt__(self, other):
     return (self.name < other.name or
@@ -148,10 +150,8 @@ class TestResult(object):
     return not (self == other)
 
   def __str__(self):
-    attrs = ''
-    if self.attrs:
-      attrs = '%s | ' % self.attrs
-    return '%s%s: %s %s' % (attrs, self.state, self.name, self.description)
+    attrs = f'{self.attrs} | ' if self.attrs else ''
+    return f'{attrs}{self.state}: {self.name} {self.description}'
 
   def ExpirationDate(self):
     # Return a datetime.date object with the expiration date for this
@@ -167,31 +167,26 @@ class TestResult(object):
     return None
 
   def HasExpired(self):
-    # Return True if the expiration date of this result has passed.
-    expiration_date = self.ExpirationDate()
-    if expiration_date:
+    if expiration_date := self.ExpirationDate():
       now = datetime.date.today()
       return now > expiration_date
 
 
 def GetMakefileValue(makefile_name, value_name):
   if os.path.exists(makefile_name):
-    makefile = open(makefile_name, encoding='latin-1', mode='r')
-    for line in makefile:
-      if line.startswith(value_name):
-        (_, value) = line.split('=', 1)
-        value = value.strip()
-        makefile.close()
-        return value
-    makefile.close()
+    with open(makefile_name, encoding='latin-1', mode='r') as makefile:
+      for line in makefile:
+        if line.startswith(value_name):
+          (_, value) = line.split('=', 1)
+          value = value.strip()
+          makefile.close()
+          return value
   return None
 
 
 def ValidBuildDirectory(builddir):
-  if (not os.path.exists(builddir) or
-      not os.path.exists('%s/Makefile' % builddir)):
-    return False
-  return True
+  return bool(
+      os.path.exists(builddir) and os.path.exists(f'{builddir}/Makefile'))
 
 
 def IsComment(line):
@@ -242,23 +237,22 @@ def GetNegativeResult(line):
 def ParseManifestWorker(result_set, manifest_path):
   """Read manifest_path, adding the contents to result_set."""
   if _OPTIONS.verbosity >= 1:
-    print('Parsing manifest file %s.' % manifest_path)
-  manifest_file = open(manifest_path, encoding='latin-1', mode='r')
-  for line in manifest_file:
-    line = line.strip()
-    if line == "":
-      pass
-    elif IsComment(line):
-      pass
-    elif IsNegativeResult(line):
-      result_set.remove(TestResult(GetNegativeResult(line)))
-    elif IsInclude(line):
-      ParseManifestWorker(result_set, GetIncludeFile(line, manifest_path))
-    elif IsInterestingResult(line):
-      result_set.add(TestResult(line))
-    else:
-      Error('Unrecognized line in manifest file: %s' % line)
-  manifest_file.close()
+    print(f'Parsing manifest file {manifest_path}.')
+  with open(manifest_path, encoding='latin-1', mode='r') as manifest_file:
+    for line in manifest_file:
+      line = line.strip()
+      if line == "":
+        pass
+      elif IsComment(line):
+        pass
+      elif IsNegativeResult(line):
+        result_set.remove(TestResult(GetNegativeResult(line)))
+      elif IsInclude(line):
+        ParseManifestWorker(result_set, GetIncludeFile(line, manifest_path))
+      elif IsInterestingResult(line):
+        result_set.add(TestResult(line))
+      else:
+        Error(f'Unrecognized line in manifest file: {line}')
 
 
 def ParseManifest(manifest_path):
@@ -274,19 +268,18 @@ def ParseSummary(sum_fname):
   # ordinal is used when sorting the results so that tests within each
   # .exp file are kept sorted.
   ordinal=0
-  sum_file = open(sum_fname, encoding='latin-1', mode='r')
-  for line in sum_file:
-    if IsInterestingResult(line):
-      result = TestResult(line, ordinal)
-      ordinal += 1
-      if result.HasExpired():
-        # Tests that have expired are not added to the set of expected
-        # results. If they are still present in the set of actual results,
-        # they will cause an error to be reported.
-        print('WARNING: Expected failure "%s" has expired.' % line.strip())
-        continue
-      result_set.add(result)
-  sum_file.close()
+  with open(sum_fname, encoding='latin-1', mode='r') as sum_file:
+    for line in sum_file:
+      if IsInterestingResult(line):
+        result = TestResult(line, ordinal)
+        ordinal += 1
+        if result.HasExpired():
+                  # Tests that have expired are not added to the set of expected
+                  # results. If they are still present in the set of actual results,
+                  # they will cause an error to be reported.
+          print(f'WARNING: Expected failure "{line.strip()}" has expired.')
+          continue
+        result_set.add(result)
   return result_set
 
 
@@ -298,10 +291,7 @@ def GetManifest(manifest_path):
 
   If no manifest file exists for this target, it returns an empty set.
   """
-  if os.path.exists(manifest_path):
-    return ParseManifest(manifest_path)
-  else:
-    return set()
+  return ParseManifest(manifest_path) if os.path.exists(manifest_path) else set()
 
 
 def CollectSumFiles(builddir):
@@ -310,9 +300,8 @@ def CollectSumFiles(builddir):
     for ignored in ('.svn', '.git'):
       if ignored in dirs:
         dirs.remove(ignored)
-    for fname in files:
-      if fname.endswith('.sum'):
-        sum_files.append(os.path.join(root, fname))
+    sum_files.extend(
+        os.path.join(root, fname) for fname in files if fname.endswith('.sum'))
   return sum_files
 
 
@@ -330,13 +319,10 @@ def CompareResults(manifest, actual):
      - List of results present in ACTUAL but missing from MANIFEST.
      - List of results present in MANIFEST but missing from ACTUAL.
   """
-  # Collect all the actual results not present in the manifest.
-  # Results in this set will be reported as errors.
-  actual_vs_manifest = set()
-  for actual_result in actual:
-    if actual_result not in manifest:
-      actual_vs_manifest.add(actual_result)
-
+  actual_vs_manifest = {
+      actual_result
+      for actual_result in actual if actual_result not in manifest
+  }
   # Collect all the tests in the manifest that were not found
   # in the actual results.
   # Results in this set will be reported as warnings (since
@@ -354,10 +340,9 @@ def CompareResults(manifest, actual):
 
 def GetManifestPath(srcdir, target, user_provided_must_exist):
   """Return the full path to the manifest file."""
-  manifest_path = _OPTIONS.manifest
-  if manifest_path:
+  if manifest_path := _OPTIONS.manifest:
     if user_provided_must_exist and not os.path.exists(manifest_path):
-      Error('Manifest does not exist: %s' % manifest_path)
+      Error(f'Manifest does not exist: {manifest_path}')
     return manifest_path
   else:
     if not srcdir:
@@ -381,10 +366,10 @@ def GetBuildData():
             _OPTIONS.build_dir)
     else:
       return None, None
-  srcdir = GetMakefileValue('%s/Makefile' % _OPTIONS.build_dir, 'srcdir =')
-  target = GetMakefileValue('%s/Makefile' % _OPTIONS.build_dir, 'target_alias=')
-  print('Source directory: %s' % srcdir)
-  print('Build target:     %s' % target)
+  srcdir = GetMakefileValue(f'{_OPTIONS.build_dir}/Makefile', 'srcdir =')
+  target = GetMakefileValue(f'{_OPTIONS.build_dir}/Makefile', 'target_alias=')
+  print(f'Source directory: {srcdir}')
+  print(f'Build target:     {target}')
   return srcdir, target
 
 
@@ -396,12 +381,11 @@ def PrintSummary(msg, summary):
 
 def GetSumFiles(results, build_dir):
   if not results:
-    print('Getting actual results from build directory %s' % build_dir)
-    sum_files = CollectSumFiles(build_dir)
+    print(f'Getting actual results from build directory {build_dir}')
+    return CollectSumFiles(build_dir)
   else:
     print('Getting actual results from user-provided results')
-    sum_files = results.split()
-  return sum_files
+    return results.split()
 
 
 def PerformComparison(expected, actual, ignore_missing_failures):
@@ -429,7 +413,7 @@ def PerformComparison(expected, actual, ignore_missing_failures):
 def CheckExpectedResults():
   srcdir, target = GetBuildData()
   manifest_path = GetManifestPath(srcdir, target, True)
-  print('Manifest:         %s' % manifest_path)
+  print(f'Manifest:         {manifest_path}')
   manifest = GetManifest(manifest_path)
   sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
@@ -444,19 +428,17 @@ def CheckExpectedResults():
 def ProduceManifest():
   (srcdir, target) = GetBuildData()
   manifest_path = GetManifestPath(srcdir, target, False)
-  print('Manifest:         %s' % manifest_path)
+  print(f'Manifest:         {manifest_path}')
   if os.path.exists(manifest_path) and not _OPTIONS.force:
     Error('Manifest file %s already exists.\nUse --force to overwrite.' %
           manifest_path)
 
   sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
-  manifest_file = open(manifest_path, encoding='latin-1', mode='w')
-  for result in sorted(actual):
-    print(result)
-    manifest_file.write('%s\n' % result)
-  manifest_file.close()
-
+  with open(manifest_path, encoding='latin-1', mode='w') as manifest_file:
+    for result in sorted(actual):
+      print(result)
+      manifest_file.write('%s\n' % result)
   return True
 
 
@@ -526,10 +508,7 @@ def Main(argv):
   else:
     retval = CheckExpectedResults()
 
-  if retval:
-    return 0
-  else:
-    return 1
+  return 0 if retval else 1
 
 
 if __name__ == '__main__':
